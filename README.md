@@ -9,6 +9,12 @@ Replaces the former split between `platform-auth` and `platform-subscriptions`.
 ## Run locally
 
 ```bash
+./scripts/run.sh
+```
+
+Or manually:
+
+```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
