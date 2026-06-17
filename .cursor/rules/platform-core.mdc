@@ -1,0 +1,25 @@
+---
+description: Core platform architecture constraints for platform-backend
+alwaysApply: true
+---
+
+# MyData Platform Core
+
+## Architecture rules
+
+1. **Single platform API** — Identity (`/v1/users/me`), catalog, and subscriptions in this repo.
+2. **JWT validation** — Keycloak JWKS; products reuse the same issuer/realm.
+3. **Own subscriptions_db** — No product data in this database.
+4. **Products call this API** — Education-backend checks `/v1/users/me/subscriptions`.
+
+## Before coding
+
+- Read `docs/api.md` and `docs/architecture.md` in this repo.
+
+## Related repos
+
+| Repo | Role |
+|------|------|
+| platform-frontend | Dashboard + marketplace UI |
+| education-backend | Education API (port 8010) |
+| social-backend | Social API (scaffold) |
