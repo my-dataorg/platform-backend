@@ -51,6 +51,81 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "owner@mydata.local",
+      "email": "owner@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Owner",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "admin@mydata.local",
+      "email": "admin@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "teacher@mydata.local",
+      "email": "teacher@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Teacher",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "student@mydata.local",
+      "email": "student@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Student",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "applicant@mydata.local",
+      "email": "applicant@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Applicant",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, get_optional_user
 from app.config import settings
 from app.db.session import SessionLocal, engine, get_db
+from app.internal_auth import require_internal_token
 from app.models import Base, Product
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
+from app.services.notifications import create_notification, list_notifications, mark_read
 
 
 @asynccontextmanager
@@ -57,6 +59,37 @@ class ProductList(BaseModel):
     items: list[ProductOut]
     nextCursor: str | None
     totalApprox: int
+
+
+class NotificationOut(BaseModel):
+    id: str
+    type: str
+    title: str
+    body: str
+    link: str
+    read: bool
+    createdAt: str
+
+
+class NotificationList(BaseModel):
+    items: list[NotificationOut]
+    unreadCount: int
+
+
+class NotificationCreate(BaseModel):
+    userId: str
+    type: str
+    title: str
+    body: str = ""
+    link: str = ""
+
+
+class NotificationReadUpdate(BaseModel):
+    read: bool = True
+
+
+class InternalSubscriptionCreate(BaseModel):
+    productSlug: str
 
 
 def _to_product(p: Product, subscribed: bool) -> ProductOut:
@@ -148,3 +181,89 @@ def subscribe(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return {"productSlug": productSlug, "status": "active"}
+
+
+@app.get("/v1/users/me/notifications", response_model=NotificationList)
+def my_notifications(
+    unreadOnly: bool = False,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    items, unread = list_notifications(db, user["id"], unread_only=unreadOnly)
+    return NotificationList(
+        items=[
+            NotificationOut(
+                id=n.id,
+                type=n.type,
+                title=n.title,
+                body=n.body,
+                link=n.link,
+                read=n.read,
+                createdAt=n.created_at.isoformat(),
+            )
+            for n in items
+        ],
+        unreadCount=unread,
+    )
+
+
+@app.patch("/v1/users/me/notifications/{notification_id}", response_model=NotificationOut)
+def update_notification(
+    notification_id: str,
+    body: NotificationReadUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    if not body.read:
+        raise HTTPException(status_code=400, detail="Only marking read is supported")
+    row = mark_read(db, user["id"], notification_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return NotificationOut(
+        id=row.id,
+        type=row.type,
+        title=row.title,
+        body=row.body,
+        link=row.link,
+        read=row.read,
+        createdAt=row.created_at.isoformat(),
+    )
+
+
+@app.post("/internal/notifications", response_model=NotificationOut, status_code=201)
+def internal_create_notification(
+    body: NotificationCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    row = create_notification(
+        db,
+        user_id=body.userId,
+        type=body.type,
+        title=body.title,
+        body=body.body,
+        link=body.link,
+    )
+    return NotificationOut(
+        id=row.id,
+        type=row.type,
+        title=row.title,
+        body=row.body,
+        link=row.link,
+        read=row.read,
+        createdAt=row.created_at.isoformat(),
+    )
+
+
+@app.post("/internal/users/{user_id}/subscriptions")
+def internal_subscribe_user(
+    user_id: str,
+    body: InternalSubscriptionCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    try:
+        sub = subscribe_user(db, user_id, body.productSlug)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"productSlug": sub.product_slug, "status": sub.status}

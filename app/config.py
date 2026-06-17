@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:3010"
     keycloak_url: str = "http://localhost:8080"
     keycloak_realm: str = "mydata"
+    internal_api_token: str = "mydata-internal-dev-token"
 
     @property
     def jwks_url(self) -> str:

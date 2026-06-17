@@ -64,3 +64,68 @@ Base URL: `http://localhost:8002` (dev) · Prefix: `/v1` · Auth: `Authorization
 ```
 
 Products validate issuer via Keycloak JWKS — same realm as platform-frontend.
+
+## Notifications (inbox)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/v1/users/me/notifications` | Required | List notifications (`?unreadOnly=true` optional) |
+| PATCH | `/v1/users/me/notifications/{id}` | Required | Mark read `{ "read": true }` |
+
+**List response:**
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "type": "education.invitation",
+      "title": "Invitation to E2E Academy",
+      "body": "You were invited as Teacher.",
+      "link": "http://localhost:3000/invitations",
+      "read": false,
+      "createdAt": "2025-06-14T12:00:00+00:00"
+    }
+  ],
+  "unreadCount": 1
+}
+```
+
+## Internal API (service-to-service)
+
+Used by product backends (e.g. education-backend). **Not for browser clients.**
+
+| Header | Value |
+|--------|--------|
+| `X-Internal-Token` | Shared secret (`INTERNAL_API_TOKEN` env) |
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/internal/notifications` | Create notification for a user |
+| POST | `/internal/users/{userId}/subscriptions` | Subscribe user to product (idempotent) |
+
+**Subscribe request:**
+
+```json
+{ "productSlug": "education" }
+```
+
+**Subscribe response:**
+
+```json
+{ "productSlug": "education", "status": "active" }
+```
+
+**Notification request:**
+
+```json
+{
+  "userId": "keycloak-sub",
+  "type": "education.invitation",
+  "title": "Invitation to …",
+  "body": "…",
+  "link": "http://localhost:3000/invitations"
+}
+```
+
+**Errors:** `401` invalid/missing token · `503` if internal token not configured

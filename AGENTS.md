@@ -6,6 +6,7 @@ Platform API: user profile, product catalog, subscriptions. Includes local infra
 
 | Agent | When to use |
 |-------|-------------|
+| **backend-developer** | **Primary** — all API implementation, services, auth, migrations |
 | **architect** | API shape, cross-product integration |
 | **planner** | Task breakdown before coding |
 | **testing-agent** | Run `pytest` after changes |
