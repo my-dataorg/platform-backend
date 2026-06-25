@@ -12,6 +12,8 @@ from app.db.session import SessionLocal, engine, get_db
 from app.internal_auth import require_internal_token
 from app.models import Base, Product
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
+from app.consumers.poker_world import start_poker_world_consumer, stop_poker_world_consumer
+from app.events import close_nats
 from app.services.notifications import create_notification, list_notifications, mark_read
 
 
@@ -23,7 +25,10 @@ async def lifespan(_: FastAPI):
         seed_products(db)
     finally:
         db.close()
+    await start_poker_world_consumer()
     yield
+    await stop_poker_world_consumer()
+    await close_nats()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
@@ -253,6 +258,16 @@ def internal_create_notification(
         read=row.read,
         createdAt=row.created_at.isoformat(),
     )
+
+
+@app.get("/internal/users/{user_id}/subscriptions")
+def internal_list_user_subscriptions(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    slugs = user_subscribed_slugs(db, user_id)
+    return {"items": [{"productSlug": s, "status": "active"} for s in sorted(slugs)]}
 
 
 @app.post("/internal/users/{user_id}/subscriptions")

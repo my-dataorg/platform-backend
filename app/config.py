@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     keycloak_url: str = "http://localhost:8080"
     keycloak_realm: str = "mydata"
     internal_api_token: str = "mydata-internal-dev-token"
+    nats_url: str = ""
+    poker_world_launch_url: str = "http://localhost:3110"
 
     @property
     def jwks_url(self) -> str:

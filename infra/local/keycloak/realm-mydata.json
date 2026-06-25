@@ -3,7 +3,7 @@
   "enabled": true,
   "displayName": "MyData Platform",
   "registrationAllowed": true,
-  "registrationEmailAsUsername": true,
+  "registrationEmailAsUsername": false,
   "verifyEmail": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -19,10 +19,15 @@
       "standardFlowEnabled": true,
       "rootUrl": "http://localhost:3000",
       "baseUrl": "http://localhost:3000",
-      "redirectUris": ["http://localhost:3000/*", "http://localhost:3010/*"],
-      "webOrigins": ["http://localhost:3000", "http://localhost:3010"],
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:3010/*",
+        "http://localhost:3110/*"
+      ],
+      "webOrigins": ["http://localhost:3000", "http://localhost:3010", "http://localhost:3110"],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:3010/*##http://localhost:3110/*"
       }
     },
     {
@@ -123,6 +128,21 @@
         {
           "type": "password",
           "value": "demo1234",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "isha",
+      "email": "isha@mydata.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Isha",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Test@123",
           "temporary": false
         }
       ]

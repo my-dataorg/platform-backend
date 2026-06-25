@@ -6,9 +6,11 @@ from app.seed import PRODUCTS
 
 
 def seed_products(db: Session) -> None:
-    if db.scalar(select(Product).limit(1)):
-        return
+    existing = set(db.scalars(select(Product.slug)).all())
+    added = False
     for i, p in enumerate(PRODUCTS):
+        if p["slug"] in existing:
+            continue
         db.add(
             Product(
                 slug=p["slug"],
@@ -22,7 +24,9 @@ def seed_products(db: Session) -> None:
                 sort_order=i,
             )
         )
-    db.commit()
+        added = True
+    if added:
+        db.commit()
 
 
 def user_subscribed_slugs(db: Session, user_id: str) -> set[str]:

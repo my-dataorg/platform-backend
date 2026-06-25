@@ -29,4 +29,4 @@ Wait for Keycloak: http://localhost:8080 (admin / admin)
 
 ## Databases
 
-`subscriptions_db`, `education_db`, `social_db`, `keycloak_db`
+`subscriptions_db`, `education_db`, `social_db`, `pokerworld_db`, `keycloak_db`

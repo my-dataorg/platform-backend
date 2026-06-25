@@ -9,9 +9,9 @@ _bearer = HTTPBearer(auto_error=False)
 _jwks_cache: dict | None = None
 
 
-async def _get_jwks() -> dict:
+async def _get_jwks(*, force_refresh: bool = False) -> dict:
     global _jwks_cache
-    if _jwks_cache:
+    if _jwks_cache and not force_refresh:
         return _jwks_cache
     async with httpx.AsyncClient() as client:
         res = await client.get(settings.jwks_url, timeout=10)
@@ -20,10 +20,19 @@ async def _get_jwks() -> dict:
         return _jwks_cache
 
 
+def _find_jwk(jwks: dict, kid: str) -> dict | None:
+    return next((k for k in jwks["keys"] if k["kid"] == kid), None)
+
+
 async def _decode_token(token: str) -> dict:
-    jwks = await _get_jwks()
     header = jwt.get_unverified_header(token)
-    key = next(k for k in jwks["keys"] if k["kid"] == header["kid"])
+    jwks = await _get_jwks()
+    key = _find_jwk(jwks, header["kid"])
+    if key is None:
+        jwks = await _get_jwks(force_refresh=True)
+        key = _find_jwk(jwks, header["kid"])
+    if key is None:
+        raise JWTError("Signing key not found")
     return jwt.decode(
         token,
         key,

@@ -42,6 +42,34 @@ client = TestClient(app)
 VALID_HEADERS = {"X-Internal-Token": "test-internal-token"}
 
 
+def test_internal_list_subscriptions_requires_token():
+    res = client.get("/internal/users/user-1/subscriptions")
+    assert res.status_code == 401
+
+
+def test_internal_list_subscriptions_empty():
+    res = client.get("/internal/users/user-list-empty/subscriptions", headers=VALID_HEADERS)
+    assert res.status_code == 200
+    assert res.json() == {"items": []}
+
+
+def test_internal_list_subscriptions_returns_active():
+    client.post(
+        "/internal/users/user-list-1/subscriptions",
+        json={"productSlug": "education"},
+        headers=VALID_HEADERS,
+    )
+    client.post(
+        "/internal/users/user-list-1/subscriptions",
+        json={"productSlug": "social"},
+        headers=VALID_HEADERS,
+    )
+    res = client.get("/internal/users/user-list-1/subscriptions", headers=VALID_HEADERS)
+    assert res.status_code == 200
+    slugs = {item["productSlug"] for item in res.json()["items"]}
+    assert slugs == {"education", "social"}
+
+
 def test_internal_subscribe_requires_token():
     res = client.post(
         "/internal/users/user-1/subscriptions",

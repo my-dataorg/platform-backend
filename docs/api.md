@@ -102,7 +102,19 @@ Used by product backends (e.g. education-backend). **Not for browser clients.**
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/internal/notifications` | Create notification for a user |
+| GET | `/internal/users/{userId}/subscriptions` | List active product subscriptions for user |
 | POST | `/internal/users/{userId}/subscriptions` | Subscribe user to product (idempotent) |
+
+**List subscriptions response:**
+
+```json
+{
+  "items": [
+    { "productSlug": "education", "status": "active" },
+    { "productSlug": "social", "status": "active" }
+  ]
+}
+```
 
 **Subscribe request:**
 

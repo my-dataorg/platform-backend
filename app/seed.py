@@ -20,6 +20,16 @@ PRODUCTS = [
         "launchUrl": "http://localhost:3020",
     },
     {
+        "slug": "poker-world",
+        "name": "Poker World",
+        "shortDescription": "Poker room directory, schedules, and favorites worldwide",
+        "iconUrl": "/icons/poker-world.svg",
+        "category": "lifestyle",
+        "tags": ["poker", "venues", "tournaments"],
+        "featured": True,
+        "launchUrl": "http://localhost:3110",
+    },
+    {
         "slug": "analytics",
         "name": "Analytics",
         "shortDescription": "Cross-product insights and usage dashboards",
