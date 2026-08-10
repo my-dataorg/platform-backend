@@ -48,3 +48,8 @@ class UserNotification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+from app.models.auth_user import AuthUser  # noqa: E402
+
+__all__ = ["Base", "Product", "UserSubscription", "UserNotification", "AuthUser"]

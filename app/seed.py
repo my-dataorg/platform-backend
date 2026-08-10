@@ -30,6 +30,16 @@ PRODUCTS = [
         "launchUrl": "http://localhost:3110",
     },
     {
+        "slug": "business",
+        "name": "Business",
+        "shortDescription": "Ledgers, customers, and daybooks for SMBs",
+        "iconUrl": "/icons/business.svg",
+        "category": "productivity",
+        "tags": ["ledger", "smb", "kirana", "ssi"],
+        "featured": True,
+        "launchUrl": "http://localhost:3120",
+    },
+    {
         "slug": "analytics",
         "name": "Analytics",
         "shortDescription": "Cross-product insights and usage dashboards",

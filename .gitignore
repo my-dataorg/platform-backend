@@ -23,6 +23,7 @@ build/
 .env
 .env.*
 !.env.example
+.keys/
 
 # OS & IDE
 .DS_Store

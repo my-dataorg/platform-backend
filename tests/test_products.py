@@ -41,7 +41,7 @@ def test_products_list():
     res = client.get("/v1/products?limit=5")
     data = res.json()
     assert len(data["items"]) == 5
-    assert data["totalApprox"] == 11
+    assert data["totalApprox"] == 12
 
 
 def test_poker_world_product():
@@ -51,6 +51,16 @@ def test_poker_world_product():
     assert poker["name"] == "Poker World"
     assert poker["launchUrl"] == "http://localhost:3110"
     assert poker["category"] == "lifestyle"
+
+
+def test_business_product():
+    res = client.get("/v1/products?q=ledger")
+    items = res.json()["items"]
+    biz = next(p for p in items if p["slug"] == "business")
+    assert biz["name"] == "Business"
+    assert biz["launchUrl"] == "http://localhost:3120"
+    assert biz["category"] == "productivity"
+    assert "ledger" in biz["tags"]
 
 
 def test_seed_products_adds_missing_catalog_entries():
@@ -83,4 +93,5 @@ def test_seed_products_adds_missing_catalog_entries():
     db.close()
 
     assert "poker-world" in slugs
-    assert len(slugs) == 11
+    assert "business" in slugs
+    assert len(slugs) == 12

@@ -4,6 +4,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.config import settings
+from app.services.jwt_keys import public_pem
 
 _bearer = HTTPBearer(auto_error=False)
 _jwks_cache: dict | None = None
@@ -25,6 +26,15 @@ def _find_jwk(jwks: dict, kid: str) -> dict | None:
 
 
 async def _decode_token(token: str) -> dict:
+    if settings.use_platform_auth:
+        return jwt.decode(
+            token,
+            public_pem(),
+            algorithms=["RS256"],
+            issuer=settings.issuer,
+            options={"verify_aud": False},
+        )
+
     header = jwt.get_unverified_header(token)
     jwks = await _get_jwks()
     key = _find_jwk(jwks, header["kid"])
@@ -49,7 +59,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Missing token")
     try:
         payload = await _decode_token(creds.credentials)
-    except (JWTError, StopIteration, httpx.HTTPError) as e:
+    except (JWTError, StopIteration, httpx.HTTPError, ValueError) as e:
         raise HTTPException(status_code=401, detail="Invalid token") from e
     return {
         "id": payload.get("sub"),
@@ -66,5 +76,5 @@ async def get_optional_user(
     try:
         payload = await _decode_token(creds.credentials)
         return {"id": payload.get("sub")}
-    except (JWTError, StopIteration, httpx.HTTPError):
+    except (JWTError, StopIteration, httpx.HTTPError, ValueError):
         return None

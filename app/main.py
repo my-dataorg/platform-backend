@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
+from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -11,18 +12,29 @@ from app.config import settings
 from app.db.session import SessionLocal, engine, get_db
 from app.internal_auth import require_internal_token
 from app.models import Base, Product
+from app.services.auth_users import (
+    authenticate,
+    create_user,
+    get_user,
+    seed_demo_users,
+    tokens_for,
+    user_public,
+)
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
 from app.consumers.poker_world import start_poker_world_consumer, stop_poker_world_consumer
 from app.events import close_nats
+from app.services.jwt_keys import ensure_keys, jwks
 from app.services.notifications import create_notification, list_notifications, mark_read
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    ensure_keys()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         seed_products(db)
+        seed_demo_users(db)
     finally:
         db.close()
     await start_poker_world_consumer()
@@ -46,6 +58,27 @@ class UserProfile(BaseModel):
     id: str
     email: str
     name: str
+
+
+class SignupIn(BaseModel):
+    username: str = Field(min_length=2, max_length=64)
+    email: str
+    password: str = Field(min_length=4, max_length=128)
+    firstName: str = Field(min_length=1, max_length=100)
+    lastName: str = Field(min_length=1, max_length=100)
+    gender: str
+    dateOfBirth: date
+    contactNumber: str = Field(min_length=5, max_length=40)
+    whatsappAvailable: bool = False
+    addressLine1: str | None = None
+    city: str | None = None
+    country: str | None = None
+    preferredLanguage: str = "en"
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, description="Username or email")
+    password: str = Field(min_length=1)
 
 
 class ProductOut(BaseModel):
@@ -116,9 +149,57 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/v1/auth/jwks")
+def auth_jwks():
+    return jwks()
+
+
+@app.post("/v1/auth/signup")
+def auth_signup(body: SignupIn, db: Session = Depends(get_db)):
+    try:
+        user = create_user(
+            db,
+            username=body.username,
+            email=body.email,
+            password=body.password,
+            first_name=body.firstName,
+            last_name=body.lastName,
+            gender=body.gender,
+            date_of_birth=body.dateOfBirth,
+            contact_number=body.contactNumber,
+            whatsapp_available=body.whatsappAvailable,
+            address_line1=body.addressLine1,
+            city=body.city,
+            country=body.country,
+            preferred_language=body.preferredLanguage,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return tokens_for(user)
+
+
+@app.post("/v1/auth/login")
+def auth_login(body: LoginIn, db: Session = Depends(get_db)):
+    user = authenticate(db, body.username, body.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return tokens_for(user)
+
+
 @app.get("/v1/users/me", response_model=UserProfile)
-def users_me(user: dict = Depends(get_current_user)):
+def users_me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = get_user(db, user["id"]) if user.get("id") else None
+    if row:
+        return UserProfile(id=row.id, email=row.email, name=row.display_name)
     return UserProfile(**user)
+
+
+@app.get("/v1/users/me/profile")
+def users_me_profile(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = get_user(db, user["id"])
+    if not row:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return user_public(row)
 
 
 @app.get("/v1/products", response_model=ProductList)
