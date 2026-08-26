@@ -102,6 +102,7 @@ Used by product backends (e.g. education-backend). **Not for browser clients.**
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/internal/notifications` | Create notification for a user |
+| POST | `/internal/users/brief` | Names and emails for user IDs (`{ "userIds": [...] }`) |
 | GET | `/internal/users/{userId}/subscriptions` | List active product subscriptions for user |
 | POST | `/internal/users/{userId}/subscriptions` | Subscribe user to product (idempotent) |
 

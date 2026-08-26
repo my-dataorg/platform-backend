@@ -172,3 +172,21 @@ def seed_demo_users(db: Session) -> None:
 
 def get_user(db: Session, user_id: str) -> AuthUser | None:
     return db.get(AuthUser, user_id)
+
+
+def users_brief(db: Session, user_ids: list[str]) -> list[dict]:
+    ids = list(dict.fromkeys(uid for uid in user_ids if uid))[:100]
+    if not ids:
+        return []
+    users = db.scalars(select(AuthUser).where(AuthUser.id.in_(ids))).all()
+    return [
+        {
+            "userId": user.id,
+            "firstName": user.first_name,
+            "lastName": user.last_name,
+            "displayName": user.display_name,
+            "email": user.email,
+            "username": user.username,
+        }
+        for user in users
+    ]

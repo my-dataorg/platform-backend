@@ -19,6 +19,7 @@ from app.services.auth_users import (
     seed_demo_users,
     tokens_for,
     user_public,
+    users_brief,
 )
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
 from app.consumers.poker_world import start_poker_world_consumer, stop_poker_world_consumer
@@ -339,6 +340,19 @@ def internal_create_notification(
         read=row.read,
         createdAt=row.created_at.isoformat(),
     )
+
+
+class UsersBriefIn(BaseModel):
+    userIds: list[str] = Field(default_factory=list, max_length=100)
+
+
+@app.post("/internal/users/brief")
+def internal_users_brief(
+    body: UsersBriefIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    return {"items": users_brief(db, body.userIds)}
 
 
 @app.get("/internal/users/{user_id}/subscriptions")
