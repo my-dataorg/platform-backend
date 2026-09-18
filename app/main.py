@@ -16,9 +16,12 @@ from app.services.auth_users import (
     authenticate,
     create_user,
     get_user,
+    get_users_by_ids,
+    search_users,
     seed_demo_users,
     tokens_for,
     user_public,
+    user_search_item,
 )
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
 from app.consumers.poker_world import start_poker_world_consumer, stop_poker_world_consumer
@@ -58,6 +61,19 @@ class UserProfile(BaseModel):
     id: str
     email: str
     name: str
+
+
+class UserSearchItem(BaseModel):
+    id: str
+    username: str
+    email: str
+    name: str
+    firstName: str
+    lastName: str
+
+
+class UserSearchList(BaseModel):
+    items: list[UserSearchItem]
 
 
 class SignupIn(BaseModel):
@@ -202,6 +218,17 @@ def users_me_profile(user: dict = Depends(get_current_user), db: Session = Depen
     return user_public(row)
 
 
+@app.get("/v1/users/search", response_model=UserSearchList)
+def users_search(
+    q: str = Query(default="", min_length=0),
+    limit: int = Query(default=10, ge=1, le=20),
+    db: Session = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    rows = search_users(db, q, limit=limit)
+    return UserSearchList(items=[UserSearchItem(**user_search_item(u)) for u in rows])
+
+
 @app.get("/v1/products", response_model=ProductList)
 def list_products(
     q: str | None = None,
@@ -339,6 +366,28 @@ def internal_create_notification(
         read=row.read,
         createdAt=row.created_at.isoformat(),
     )
+
+
+@app.get("/internal/users/search", response_model=UserSearchList)
+def internal_users_search(
+    q: str = Query(default="", min_length=0),
+    limit: int = Query(default=10, ge=1, le=20),
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    rows = search_users(db, q, limit=limit)
+    return UserSearchList(items=[UserSearchItem(**user_search_item(u)) for u in rows])
+
+
+@app.get("/internal/users/briefs", response_model=UserSearchList)
+def internal_users_briefs(
+    ids: str = Query(default=""),
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_token),
+):
+    user_ids = [part.strip() for part in ids.split(",") if part.strip()]
+    rows = get_users_by_ids(db, user_ids)
+    return UserSearchList(items=[UserSearchItem(**user_search_item(u)) for u in rows])
 
 
 @app.get("/internal/users/{user_id}/subscriptions")

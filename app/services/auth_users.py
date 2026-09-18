@@ -172,3 +172,42 @@ def seed_demo_users(db: Session) -> None:
 
 def get_user(db: Session, user_id: str) -> AuthUser | None:
     return db.get(AuthUser, user_id)
+
+
+def search_users(db: Session, query: str, *, limit: int = 10) -> list[AuthUser]:
+    q = query.strip()
+    if len(q) < 2:
+        return []
+    like = f"%{q}%"
+    stmt = (
+        select(AuthUser)
+        .where(
+            or_(
+                AuthUser.username.ilike(like),
+                AuthUser.email.ilike(like),
+                AuthUser.first_name.ilike(like),
+                AuthUser.last_name.ilike(like),
+            )
+        )
+        .order_by(AuthUser.username)
+        .limit(limit)
+    )
+    return list(db.scalars(stmt))
+
+
+def get_users_by_ids(db: Session, user_ids: list[str]) -> list[AuthUser]:
+    ids = list(dict.fromkeys(uid for uid in user_ids if uid))
+    if not ids:
+        return []
+    return list(db.scalars(select(AuthUser).where(AuthUser.id.in_(ids))))
+
+
+def user_search_item(user: AuthUser) -> dict:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "name": user.display_name,
+        "firstName": user.first_name,
+        "lastName": user.last_name,
+    }
