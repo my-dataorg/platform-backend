@@ -21,6 +21,18 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8002
 ```
 
+For an existing PostgreSQL database, apply schema upgrades before deploying:
+
+```bash
+DATABASE_URL="$DATABASE_URL" alembic upgrade head
+```
+
+Use the deployment's PostgreSQL URL in `DATABASE_URL`. The raw SQL file is
+retained separately for deployments that use the existing direct-SQL upgrade
+process; use one migration path, not both.
+The application still uses `create_all` for local bootstrap and tests; it is
+not a replacement for `alembic upgrade head` in deployments.
+
 ## Infrastructure
 
 ```bash

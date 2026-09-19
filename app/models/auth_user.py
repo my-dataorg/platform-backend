@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base
@@ -16,12 +16,20 @@ class AuthUser(Base):
     __table_args__ = (
         UniqueConstraint("username", name="uq_auth_users_username"),
         UniqueConstraint("email", name="uq_auth_users_email"),
+        Index(
+            "uq_auth_users_single_superuser",
+            "is_superuser",
+            unique=True,
+            sqlite_where=text("is_superuser = 1"),
+            postgresql_where=text("is_superuser IS TRUE"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     username: Mapped[str] = mapped_column(String(64), index=True)
     email: Mapped[str] = mapped_column(String(200), index=True)
     password_hash: Mapped[str] = mapped_column(Text)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     gender: Mapped[str] = mapped_column(String(32))

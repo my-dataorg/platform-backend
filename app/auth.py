@@ -4,7 +4,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.config import settings
+from app.db.session import get_db
+from app.models import AuthUser
 from app.services.jwt_keys import public_pem
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 _bearer = HTTPBearer(auto_error=False)
 _jwks_cache: dict | None = None
@@ -78,3 +82,17 @@ async def get_optional_user(
         return {"id": payload.get("sub")}
     except (JWTError, StopIteration, httpx.HTTPError, ValueError):
         return None
+
+
+def require_superuser(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not user.get("id"):
+        raise HTTPException(status_code=403, detail="Platform superuser access required")
+    admin = db.scalar(
+        select(AuthUser).where(AuthUser.id == user["id"], AuthUser.is_superuser.is_(True))
+    )
+    if not admin:
+        raise HTTPException(status_code=403, detail="Platform superuser access required")
+    return user

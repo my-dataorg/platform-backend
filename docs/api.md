@@ -9,7 +9,7 @@ Base URL: `http://localhost:8002` (dev) · Prefix: `/v1` · Auth: `Authorization
 | Protocol | HTTPS REST (JSON) |
 | Auth | Keycloak JWT via JWKS |
 | Versioning | URL prefix `/v1/` |
-| Errors | `{ "detail": "..." }` (FastAPI default) |
+| Errors | RFC 7807 `application/problem+json` (request validation uses `400`) |
 | Pagination | `?cursor=&limit=` on products |
 
 ## Identity
@@ -32,6 +32,20 @@ Base URL: `http://localhost:8002` (dev) · Prefix: `/v1` · Auth: `Authorization
 | GET | `/v1/products/categories` | Optional | Category counts |
 
 **Query params for `/v1/products`:** `q`, `category`, `featured`, `cursor`, `limit` (max 48)
+
+## Product handoff
+
+The dashboard can mint a short-lived, single-use handoff code for an active
+product subscription. The target origin must match the product launch origin
+and the configured product allowlist.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/v1/products/handoff` | Required | Mint a one-time handoff code |
+| POST | `/v1/products/handoff/exchange` | None | Exchange a code for a platform access token |
+
+The code is sent in the JSON body to the exchange endpoint and is never placed
+in a URL. It expires after 60 seconds and cannot be exchanged twice.
 
 ## Subscriptions
 

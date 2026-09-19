@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -27,11 +30,15 @@ from app.services.catalog import seed_products, subscribe_user, user_subscribed_
 from app.consumers.poker_world import start_poker_world_consumer, stop_poker_world_consumer
 from app.events import close_nats
 from app.services.jwt_keys import ensure_keys, jwks
+from app.schemas.handoff import HandoffCreate, HandoffExchange, HandoffCreated
+from app.services.handoff import create_handoff, exchange_handoff
 from app.services.notifications import create_notification, list_notifications, mark_read
+from app.routers.admin_products import router as admin_products_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings.validate_bootstrap_config()
     ensure_keys()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
@@ -47,6 +54,38 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+app.include_router(admin_products_router)
+
+
+@app.exception_handler(HTTPException)
+async def http_problem(_: Request, error: HTTPException):
+    return JSONResponse(
+        status_code=error.status_code,
+        media_type="application/problem+json",
+        content={
+            "type": f"https://mydata.platform/errors/http-{error.status_code}",
+            "title": "Request failed",
+            "status": error.status_code,
+            "detail": error.detail,
+        },
+        headers=error.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_problem(_: Request, error: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        media_type="application/problem+json",
+        content={
+            "type": "https://mydata.platform/errors/validation",
+            "title": "Validation Error",
+            "status": 400,
+            "detail": "Request validation failed",
+            "errors": jsonable_encoder(error.errors()),
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -107,6 +146,9 @@ class ProductOut(BaseModel):
     featured: bool
     subscribed: bool
     launchUrl: str
+    status: str
+    defaultPath: str
+    embedEnabled: bool
 
 
 class ProductList(BaseModel):
@@ -146,6 +188,30 @@ class InternalSubscriptionCreate(BaseModel):
     productSlug: str
 
 
+@app.post("/v1/products/handoff", response_model=HandoffCreated)
+def product_handoff(
+    body: HandoffCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        code, expires_in = create_handoff(db, user["id"], body)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return HandoffCreated(code=code, expiresIn=expires_in)
+
+
+@app.post("/v1/products/handoff/exchange")
+def exchange_product_handoff(
+    body: HandoffExchange,
+    db: Session = Depends(get_db),
+):
+    try:
+        return exchange_handoff(db, body.code, body.targetOrigin, body.returnPath)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def _to_product(p: Product, subscribed: bool) -> ProductOut:
     return ProductOut(
         slug=p.slug,
@@ -157,6 +223,9 @@ def _to_product(p: Product, subscribed: bool) -> ProductOut:
         featured=p.featured,
         subscribed=subscribed,
         launchUrl=p.launch_url,
+        status=p.status,
+        defaultPath=p.default_path,
+        embedEnabled=p.embed_enabled,
     )
 
 
@@ -239,7 +308,7 @@ def list_products(
     db: Session = Depends(get_db),
     user: dict | None = Depends(get_optional_user),
 ):
-    stmt = select(Product).order_by(Product.sort_order)
+    stmt = select(Product).where(Product.status == "enabled").order_by(Product.sort_order)
     if category:
         stmt = stmt.where(Product.category == category)
     if featured is not None:
@@ -262,7 +331,7 @@ def list_products(
 
 @app.get("/v1/products/categories")
 def list_categories(db: Session = Depends(get_db)):
-    products = db.scalars(select(Product)).all()
+    products = db.scalars(select(Product).where(Product.status == "enabled")).all()
     counts: dict[str, int] = {}
     for p in products:
         counts[p.category] = counts.get(p.category, 0) + 1

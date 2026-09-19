@@ -21,6 +21,9 @@ def seed_products(db: Session) -> None:
                 tags=p["tags"],
                 featured=p["featured"],
                 launch_url=p["launchUrl"],
+                status="enabled",
+                default_path="/",
+                embed_enabled=True,
                 sort_order=i,
             )
         )

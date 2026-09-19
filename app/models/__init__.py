@@ -19,6 +19,9 @@ class Product(Base):
     tags: Mapped[list] = mapped_column(JSON, default=list)
     featured: Mapped[bool] = mapped_column(Boolean, default=False)
     launch_url: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(16), default="enabled")
+    default_path: Mapped[str] = mapped_column(String(256), default="/")
+    embed_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(default=0)
 
 
@@ -51,5 +54,14 @@ class UserNotification(Base):
 
 
 from app.models.auth_user import AuthUser  # noqa: E402
+from app.models.admin import ProductAudit, ProductHandoff  # noqa: E402
 
-__all__ = ["Base", "Product", "UserSubscription", "UserNotification", "AuthUser"]
+__all__ = [
+    "Base",
+    "Product",
+    "UserSubscription",
+    "UserNotification",
+    "AuthUser",
+    "ProductAudit",
+    "ProductHandoff",
+]
