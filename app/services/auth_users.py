@@ -16,7 +16,22 @@ from app.services.jwt_keys import KID, private_pem
 
 ph = PasswordHasher()
 
-GENDERS = frozenset({"female", "male", "non_binary", "prefer_not_to_say", "other"})
+GENDERS = frozenset(
+    {
+        "agender",
+        "bigender",
+        "female",
+        "genderfluid",
+        "genderqueer",
+        "intersex",
+        "male",
+        "non_binary",
+        "prefer_not_to_say",
+        "other",
+        "transgender",
+        "two_spirit",
+    }
+)
 ACCESS_TTL_MIN = 60 * 12  # 12h for local MVP comfort
 AUDIENCE = ["platform", "education", "social", "poker-world", "business"]
 
@@ -55,6 +70,7 @@ def create_user(
     address_line1: str | None = None,
     city: str | None = None,
     country: str | None = None,
+    state: str | None = None,
     preferred_language: str = "en",
 ) -> AuthUser:
     username = normalize_username(username)
@@ -83,6 +99,7 @@ def create_user(
         address_line1=(address_line1 or None),
         city=(city or None),
         country=(country.upper() if country else None),
+        state=(state.strip() if state else None),
         preferred_language=preferred_language or "en",
     )
     db.add(user)
@@ -140,6 +157,7 @@ def user_public(user: AuthUser) -> dict:
         "addressLine1": user.address_line1,
         "city": user.city,
         "country": user.country,
+        "state": user.state,
         "preferredLanguage": user.preferred_language,
     }
 

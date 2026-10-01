@@ -38,7 +38,8 @@ class AuthUser(Base):
     whatsapp_available: Mapped[bool] = mapped_column(Boolean, default=False)
     address_line1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
     preferred_language: Mapped[str] = mapped_column(String(16), default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

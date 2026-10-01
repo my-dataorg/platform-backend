@@ -33,6 +33,13 @@ from app.services.jwt_keys import ensure_keys, jwks
 from app.schemas.handoff import HandoffCreate, HandoffExchange, HandoffCreated
 from app.services.handoff import create_handoff, exchange_handoff
 from app.services.notifications import create_notification, list_notifications, mark_read
+from app.services.registration_options import (
+    ensure_registration_options,
+    registration_options,
+    seed_registration_options,
+    states_for_country,
+    validate_registration_options,
+)
 from app.routers.admin_products import router as admin_products_router
 
 
@@ -44,6 +51,7 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         seed_products(db)
+        seed_registration_options(db)
         seed_demo_users(db)
     finally:
         db.close()
@@ -128,6 +136,7 @@ class SignupIn(BaseModel):
     addressLine1: str | None = None
     city: str | None = None
     country: str | None = None
+    state: str | None = None
     preferredLanguage: str = "en"
 
 
@@ -239,9 +248,26 @@ def auth_jwks():
     return jwks()
 
 
+@app.get("/v1/auth/registration-options")
+def auth_registration_options(db: Session = Depends(get_db)):
+    return registration_options(db)
+
+
+@app.get("/v1/auth/registration-options/{country_code}/states")
+def auth_registration_states(country_code: str, db: Session = Depends(get_db)):
+    return {"states": states_for_country(db, country_code)}
+
+
 @app.post("/v1/auth/signup")
 def auth_signup(body: SignupIn, db: Session = Depends(get_db)):
     try:
+        ensure_registration_options(db)
+        validate_registration_options(
+            db,
+            country_code=body.country,
+            state_code=body.state,
+            gender_code=body.gender,
+        )
         user = create_user(
             db,
             username=body.username,
@@ -256,6 +282,7 @@ def auth_signup(body: SignupIn, db: Session = Depends(get_db)):
             address_line1=body.addressLine1,
             city=body.city,
             country=body.country,
+            state=body.state,
             preferred_language=body.preferredLanguage,
         )
     except ValueError as e:

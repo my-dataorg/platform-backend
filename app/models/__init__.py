@@ -55,6 +55,7 @@ class UserNotification(Base):
 
 from app.models.auth_user import AuthUser  # noqa: E402
 from app.models.admin import ProductAudit, ProductHandoff  # noqa: E402
+from app.models.reference_data import Country, GenderOption, StateProvince  # noqa: E402
 
 __all__ = [
     "Base",
@@ -64,4 +65,7 @@ __all__ = [
     "AuthUser",
     "ProductAudit",
     "ProductHandoff",
+    "Country",
+    "StateProvince",
+    "GenderOption",
 ]
