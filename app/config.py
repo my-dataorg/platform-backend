@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     keycloak_realm: str = "mydata"
     internal_api_token: str = "mydata-internal-dev-token"
     nats_url: str = ""
+    education_launch_url: str = "http://localhost:3010"
     poker_world_launch_url: str = "http://localhost:3110"
+    business_launch_url: str = "http://localhost:3120"
     product_allowed_origins: str = (
         "http://localhost:3010,http://localhost:3020,"
         "http://localhost:3030,http://localhost:3040,http://localhost:3050,"

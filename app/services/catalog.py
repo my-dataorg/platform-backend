@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import Product, UserSubscription
 from app.seed import PRODUCTS
 
@@ -8,8 +9,18 @@ from app.seed import PRODUCTS
 def seed_products(db: Session) -> None:
     existing = set(db.scalars(select(Product.slug)).all())
     added = False
+    launch_overrides = {
+        "education": settings.education_launch_url,
+        "poker-world": settings.poker_world_launch_url,
+        "business": settings.business_launch_url,
+    }
     for i, p in enumerate(PRODUCTS):
         if p["slug"] in existing:
+            product = db.get(Product, p["slug"])
+            launch_url = launch_overrides.get(p["slug"])
+            if product and launch_url and product.launch_url != launch_url:
+                product.launch_url = launch_url
+                added = True
             continue
         db.add(
             Product(
@@ -20,7 +31,7 @@ def seed_products(db: Session) -> None:
                 category=p["category"],
                 tags=p["tags"],
                 featured=p["featured"],
-                launch_url=p["launchUrl"],
+                launch_url=launch_overrides.get(p["slug"], p["launchUrl"]),
                 status="enabled",
                 default_path="/",
                 embed_enabled=True,
