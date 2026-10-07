@@ -24,6 +24,7 @@ from app.services.auth_users import (
     seed_demo_users,
     tokens_for,
     user_public,
+    user_brief_item,
     user_search_item,
 )
 from app.services.catalog import seed_products, subscribe_user, user_subscribed_slugs
@@ -121,6 +122,20 @@ class UserSearchItem(BaseModel):
 
 class UserSearchList(BaseModel):
     items: list[UserSearchItem]
+
+
+class InternalUserBrief(BaseModel):
+    id: str
+    username: str
+    email: str
+    name: str
+    firstName: str
+    lastName: str
+    dateOfBirth: date
+
+
+class InternalUserBriefList(BaseModel):
+    items: list[InternalUserBrief]
 
 
 class SignupIn(BaseModel):
@@ -475,7 +490,7 @@ def internal_users_search(
     return UserSearchList(items=[UserSearchItem(**user_search_item(u)) for u in rows])
 
 
-@app.get("/internal/users/briefs", response_model=UserSearchList)
+@app.get("/internal/users/briefs", response_model=InternalUserBriefList)
 def internal_users_briefs(
     ids: str = Query(default=""),
     db: Session = Depends(get_db),
@@ -483,7 +498,9 @@ def internal_users_briefs(
 ):
     user_ids = [part.strip() for part in ids.split(",") if part.strip()]
     rows = get_users_by_ids(db, user_ids)
-    return UserSearchList(items=[UserSearchItem(**user_search_item(u)) for u in rows])
+    return InternalUserBriefList(
+        items=[InternalUserBrief(**user_brief_item(u)) for u in rows]
+    )
 
 
 @app.get("/internal/users/{user_id}/subscriptions")
