@@ -235,4 +235,5 @@ def user_brief_item(user: AuthUser) -> dict:
     return {
         **user_search_item(user),
         "dateOfBirth": user.date_of_birth,
+        "gender": user.gender or "",
     }

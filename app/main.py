@@ -132,6 +132,7 @@ class InternalUserBrief(BaseModel):
     firstName: str
     lastName: str
     dateOfBirth: date
+    gender: str = ""
 
 
 class InternalUserBriefList(BaseModel):
