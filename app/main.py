@@ -42,6 +42,7 @@ from app.services.registration_options import (
     validate_registration_options,
 )
 from app.routers.admin_products import router as admin_products_router
+from app.routers.business_gateway import router as business_gateway_router
 
 
 @asynccontextmanager
@@ -64,6 +65,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 app.include_router(admin_products_router)
+app.include_router(business_gateway_router)
 
 
 @app.exception_handler(HTTPException)
