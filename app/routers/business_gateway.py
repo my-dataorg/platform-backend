@@ -5,12 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.auth import get_current_user
 from app.config import settings
+from app.services.business_upstream import business_api_upstream_base
 
 router = APIRouter(prefix="/v1/business", tags=["business-gateway"])
-
-
-def _upstream_base() -> str:
-    return settings.business_api_url.rstrip("/")
 
 
 async def _forward(request: Request, upstream_path: str) -> Response:
@@ -18,7 +15,8 @@ async def _forward(request: Request, upstream_path: str) -> Response:
     if not auth:
         raise HTTPException(status_code=401, detail="Missing token")
 
-    url = f"{_upstream_base()}{upstream_path}"
+    base = business_api_upstream_base()
+    url = f"{base}{upstream_path}"
     headers = {"Authorization": auth}
     content_type = request.headers.get("content-type")
     if content_type:
@@ -36,7 +34,7 @@ async def _forward(request: Request, upstream_path: str) -> Response:
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Business API unreachable at {settings.business_api_url}. Is business-backend running?",
+            detail=f"Business API unreachable at {base} (configured {settings.business_api_url}). Is business-backend running on the Docker network?",
         ) from exc
 
     media_type = upstream.headers.get("content-type", "application/json")
