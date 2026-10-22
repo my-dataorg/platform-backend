@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from jose import jwt
@@ -108,14 +109,73 @@ def create_user(
     return user
 
 
+def _keycloak_profile(login: str, password: str) -> dict | None:
+    """Users who registered in Keycloak can still sign in to platform."""
+    realm = f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
+    try:
+        token = httpx.post(
+            f"{realm}/protocol/openid-connect/token",
+            data={
+                "grant_type": "password",
+                "client_id": "platform-frontend",
+                "username": login,
+                "password": password,
+            },
+            timeout=5.0,
+        )
+        if token.status_code != 200:
+            return None
+        access = token.json().get("access_token")
+        if not access:
+            return None
+        info = httpx.get(
+            f"{realm}/protocol/openid-connect/userinfo",
+            headers={"Authorization": f"Bearer {access}"},
+            timeout=5.0,
+        )
+        if info.status_code != 200:
+            return None
+        return info.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _user_from_keycloak(db: Session, login: str, password: str, profile: dict) -> AuthUser:
+    username = normalize_username(str(profile.get("preferred_username") or login))
+    email = normalize_email(str(profile.get("email") or f"{username}@users.local"))
+    existing = db.scalar(
+        select(AuthUser).where(or_(AuthUser.username == username, AuthUser.email == email))
+    )
+    if existing:
+        existing.password_hash = hash_password(password)
+        db.commit()
+        db.refresh(existing)
+        return existing
+    return create_user(
+        db,
+        username=username,
+        email=email,
+        password=password,
+        first_name=str(profile.get("given_name") or username),
+        last_name=str(profile.get("family_name") or "User"),
+        gender="prefer_not_to_say",
+        date_of_birth=date(1990, 1, 1),
+        contact_number="+10000000000",
+        whatsapp_available=False,
+    )
+
+
 def authenticate(db: Session, login: str, password: str) -> AuthUser | None:
     login = login.strip().lower()
     user = db.scalar(
         select(AuthUser).where(or_(AuthUser.username == login, AuthUser.email == login))
     )
-    if not user or not verify_password(user.password_hash, password):
+    if user and verify_password(user.password_hash, password):
+        return user
+    profile = _keycloak_profile(login, password)
+    if not profile:
         return None
-    return user
+    return _user_from_keycloak(db, login, password, profile)
 
 
 def issue_access_token(user: AuthUser) -> str:

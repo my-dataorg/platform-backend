@@ -22,12 +22,20 @@
       "redirectUris": [
         "http://localhost:3000/*",
         "http://localhost:3010/*",
-        "http://localhost:3110/*"
+        "http://localhost:3020/*",
+        "http://localhost:3110/*",
+        "http://localhost:3120/*"
       ],
-      "webOrigins": ["http://localhost:3000", "http://localhost:3010", "http://localhost:3110"],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:3010",
+        "http://localhost:3020",
+        "http://localhost:3110",
+        "http://localhost:3120"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:3010/*##http://localhost:3110/*"
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:3010/*##http://localhost:3020/*##http://localhost:3110/*##http://localhost:3120/*"
       }
     },
     {
