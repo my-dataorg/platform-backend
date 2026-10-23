@@ -223,13 +223,24 @@ def user_public(user: AuthUser) -> dict:
 
 
 def seed_demo_users(db: Session) -> None:
-    """Ensure local demo accounts exist (admin / admin)."""
+    """Ensure demo accounts exist for local/staging (see platform-backend README)."""
     demos = [
         {
             "username": "admin",
             "email": "admin@mydata.local",
             "password": "admin",
             "first_name": "Admin",
+            "last_name": "User",
+            "gender": "prefer_not_to_say",
+            "date_of_birth": date(1990, 1, 1),
+            "contact_number": "+10000000000",
+            "whatsapp_available": False,
+        },
+        {
+            "username": "demo",
+            "email": "demo@mydata.local",
+            "password": "demo1234",
+            "first_name": "Demo",
             "last_name": "User",
             "gender": "prefer_not_to_say",
             "date_of_birth": date(1990, 1, 1),
