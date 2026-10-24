@@ -79,9 +79,10 @@ jobs:
 
           "${SSH[@]}" "mkdir -p '$DEPLOY_PATH' || (sudo mkdir -p '$DEPLOY_PATH' && sudo chown \"\$(whoami):\$(whoami)\" '$DEPLOY_PATH')"
 
+          "${SSH[@]}" "cat > '$DEPLOY_PATH/docker-remove-unused.sh'" < .github/scripts/docker-remove-unused.sh
           "${SSH[@]}" "cat > '$DEPLOY_PATH/docker-free-disk.sh'" < .github/scripts/docker-free-disk.sh
           "${SSH[@]}" "cat > '$DEPLOY_PATH/deploy-one-service.sh'" < .github/scripts/deploy-one-service.sh
-          "${SSH[@]}" "chmod +x '$DEPLOY_PATH/docker-free-disk.sh' '$DEPLOY_PATH/deploy-one-service.sh'"
+          "${SSH[@]}" "chmod +x '$DEPLOY_PATH/docker-remove-unused.sh' '$DEPLOY_PATH/docker-free-disk.sh' '$DEPLOY_PATH/deploy-one-service.sh'"
 
           printf '%s' "$GHCR_TOKEN" | "${SSH[@]}" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
 
