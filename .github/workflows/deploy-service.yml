@@ -37,6 +37,8 @@ jobs:
     env:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/mydata/production' }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Validate image reference
         env:
           SERVICE: ${{ inputs.service }}
@@ -47,7 +49,8 @@ jobs:
             *) echo "Unknown service: $SERVICE" >&2; exit 1 ;;
           esac
           if [[ ! "$IMAGE" =~ ^ghcr\.io/my-dataorg/${SERVICE}@sha256:[0-9a-f]{64}$ ]]; then
-            echo "Use an immutable GHCR image for $SERVICE" >&2
+            echo "Invalid image reference for $SERVICE: $IMAGE" >&2
+            echo "Expected: ghcr.io/my-dataorg/${SERVICE}@sha256:<64-char-hex>" >&2
             exit 1
           fi
 
@@ -61,26 +64,18 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
 
-      - name: Prepare service override
-        env:
-          SERVICE: ${{ inputs.service }}
-          IMAGE: ${{ inputs.image }}
-        run: |
-          variable=$(printf '%s' "$SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE
-          printf '%s=%s\n' "$variable" "$IMAGE" > service.env
-
-      - name: Upload service override
+      - name: Upload disk cleanup script
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          set -euo pipefail
           ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "mkdir -p '$DEPLOY_PATH'"
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          scp -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes \
+            .github/scripts/docker-free-disk.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-free-disk.sh"
           ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cat > '$DEPLOY_PATH/service.env.next'" < service.env
+            "$DEPLOY_USER@$DEPLOY_HOST" "chmod +x '$DEPLOY_PATH/docker-free-disk.sh'"
 
       - name: Pull and restart one service
         env:
@@ -91,6 +86,10 @@ jobs:
           SERVICE: ${{ inputs.service }}
           IMAGE: ${{ inputs.image }}
         run: |
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "MIN_FREE_MB=0 '$DEPLOY_PATH/docker-free-disk.sh'; MIN_FREE_MB=350 '$DEPLOY_PATH/docker-free-disk.sh'"
+
           printf '%s' "$GHCR_TOKEN" | ssh -i "$HOME/.ssh/deploy_key" \
             -o StrictHostKeyChecking=yes -o BatchMode=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -101,11 +100,12 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "DEPLOY_PATH='$DEPLOY_PATH' SERVICE='$SERVICE' IMAGE='$IMAGE' bash -s" <<'REMOTE'
           set -eu
+          mkdir -p "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
           image_variable=$(printf '%s' "$SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE
-          export "$image_variable=$IMAGE"
           [ -f service.env ] && cp service.env service.env.previous || true
-          mv service.env.next service.env
+          printf '%s=%s\n' "$image_variable" "$IMAGE" > service.env
+          export "$image_variable=$IMAGE"
 
           compose() {
             args=(--env-file .env)
@@ -126,11 +126,65 @@ jobs:
           }
           trap rollback ERR
 
-          compose pull "$SERVICE"
+          if ! compose config --services | grep -qx "$SERVICE"; then
+            echo "Service $SERVICE is missing from $DEPLOY_PATH/compose.yml." >&2
+            echo "Run mydata Actions → Deploy production to upload the latest compose stack." >&2
+            exit 1
+          fi
+
+          ensure_postgres_db() {
+            local db_name="$1"
+            local pg
+            pg=$(compose ps -q postgres)
+            if [ -z "$pg" ]; then
+              echo "Postgres container is not running; start the stack before deploying $SERVICE." >&2
+              exit 1
+            fi
+            local exists
+            exists=$(docker exec "$pg" psql -U mydata -d postgres -tAc \
+              "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null || true)
+            if [ "$(echo "$exists" | tr -d '[:space:]')" = "1" ]; then
+              echo "Postgres database ${db_name} already exists."
+              return 0
+            fi
+            echo "Creating Postgres database ${db_name}..."
+            docker exec "$pg" psql -U mydata -d postgres -v ON_ERROR_STOP=1 \
+              -c "CREATE DATABASE ${db_name};"
+          }
+
+          if [ "$SERVICE" = "business-backend" ]; then
+            ensure_postgres_db business_db
+          fi
+
+          drop_stale_service_images() {
+            repo="ghcr.io/my-dataorg/${SERVICE}"
+            for id in $(docker images "${repo}" -q 2>/dev/null | sort -u); do
+              if [ -z "$(docker ps -aq --filter "ancestor=${id}" 2>/dev/null || true)" ]; then
+                docker rmi -f "$id" 2>/dev/null || true
+              fi
+            done
+          }
+          drop_stale_service_images
+          if [ -x ./docker-free-disk.sh ]; then
+            MIN_FREE_MB=0 ./docker-free-disk.sh
+            MIN_FREE_MB=350 ./docker-free-disk.sh
+          fi
+
+          docker pull "$IMAGE"
           compose up -d --no-deps "$SERVICE"
 
           container=$(compose ps -q "$SERVICE")
-          [ -n "$container" ] || rollback
+          if [ -z "$container" ]; then
+            echo "No container id for $SERVICE after compose up." >&2
+            compose ps >&2 || true
+            rollback
+          fi
+          running=$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)
+          if [ "$running" != "true" ]; then
+            echo "Container for $SERVICE is not running. Logs:" >&2
+            docker logs "$container" 2>&1 | tail -n 100 >&2 || true
+            rollback
+          fi
           case "$SERVICE" in
             platform-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8002/health\", timeout=2)'" ;;
             education-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8010/health\", timeout=2)'" ;;
@@ -146,11 +200,15 @@ jobs:
             if docker exec "$container" sh -c "$check" >/dev/null 2>&1; then
               break
             fi
-            [ "$attempt" = 30 ] && rollback
+            if [ "$attempt" = 30 ]; then
+              echo "Health check failed for $SERVICE; recent container logs:" >&2
+              docker logs "$container" 2>&1 | tail -n 80 >&2 || true
+              rollback
+            fi
             sleep 5
           done
           trap - ERR
           rm -f service.env.previous
           docker logout ghcr.io >/dev/null 2>&1 || true
-          docker image prune -f
+          docker image prune -af 2>/dev/null || true
           REMOTE
