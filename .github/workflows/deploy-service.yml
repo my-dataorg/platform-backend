@@ -119,10 +119,27 @@ jobs:
           export "$image_variable=$IMAGE"
 
           compose() {
-            args=(--env-file .env)
+            args=(-p production --env-file .env)
             [ -f image.env ] && args+=(--env-file image.env)
             [ -f service.env ] && args+=(--env-file service.env)
             docker compose "${args[@]}" "$@"
+          }
+
+          remove_stale_service_container() {
+            local svc="$1"
+            compose stop "$svc" 2>/dev/null || true
+            compose rm -f "$svc" 2>/dev/null || true
+            local id name
+            for id in $(docker ps -aq --filter "name=${svc}" 2>/dev/null); do
+              docker rm -f "$id" 2>/dev/null || true
+            done
+            docker ps -a --format '{{.ID}} {{.Names}}' 2>/dev/null | while read -r id name; do
+              case "$name" in
+                *"production-${svc}"*)
+                  docker rm -f "$id" 2>/dev/null || true
+                  ;;
+              esac
+            done
           }
 
           rollback() {
@@ -131,8 +148,8 @@ jobs:
             else
               rm -f service.env
             fi
-            compose pull "$SERVICE" || true
-            compose up -d --no-deps "$SERVICE" || true
+            remove_stale_service_container "$SERVICE"
+            compose up -d --force-recreate --no-deps "$SERVICE" || true
             exit 1
           }
           trap rollback ERR
@@ -182,9 +199,15 @@ jobs:
           fi
 
           docker pull "$IMAGE"
-          compose up -d --no-deps "$SERVICE"
+          remove_stale_service_container "$SERVICE"
+          compose up -d --force-recreate --no-deps "$SERVICE"
 
-          container=$(compose ps -q "$SERVICE")
+          container=""
+          for attempt in $(seq 1 10); do
+            container=$(compose ps -q "$SERVICE" 2>/dev/null | head -n1)
+            [ -n "$container" ] && docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -qx true && break
+            sleep 2
+          done
           if [ -z "$container" ]; then
             echo "No container id for $SERVICE after compose up." >&2
             compose ps >&2 || true
