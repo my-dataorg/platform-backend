@@ -18,6 +18,7 @@ from app.models import Base, Product
 from app.services.auth_users import (
     authenticate,
     create_user,
+    ensure_bootstrap_admin_from_settings,
     get_user,
     get_users_by_ids,
     search_users,
@@ -55,6 +56,7 @@ async def lifespan(_: FastAPI):
         seed_products(db)
         seed_registration_options(db)
         seed_demo_users(db)
+        ensure_bootstrap_admin_from_settings(db)
     finally:
         db.close()
     await start_poker_world_consumer()

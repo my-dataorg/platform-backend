@@ -223,7 +223,7 @@ def user_public(user: AuthUser) -> dict:
 
 
 def seed_demo_users(db: Session) -> None:
-    """Ensure demo accounts exist for local/staging (see platform-backend README)."""
+    """Ensure demo accounts exist and passwords match README (local/staging recovery)."""
     demos = [
         {
             "username": "admin",
@@ -249,14 +249,48 @@ def seed_demo_users(db: Session) -> None:
         },
     ]
     for demo in demos:
-        exists = db.scalar(
+        password = demo["password"]
+        existing = db.scalar(
             select(AuthUser).where(
                 or_(AuthUser.username == demo["username"], AuthUser.email == demo["email"])
             )
         )
-        if exists:
+        if existing:
+            existing.password_hash = hash_password(password)
+            db.commit()
             continue
         create_user(db, **demo)
+
+
+def ensure_bootstrap_admin_from_settings(db: Session) -> None:
+    """Create or refresh password for BOOTSTRAP_ADMIN_* env user (production first login)."""
+    username = (settings.bootstrap_admin_username or "").strip()
+    email = (settings.bootstrap_admin_email or "").strip()
+    password = settings.bootstrap_admin_password or ""
+    if not username or not email or not password:
+        return
+
+    username = normalize_username(username)
+    email = normalize_email(email)
+    row = db.scalar(
+        select(AuthUser).where(or_(AuthUser.username == username, AuthUser.email == email))
+    )
+    if row:
+        row.password_hash = hash_password(password)
+        row.is_superuser = True
+        db.commit()
+        return
+
+    from app.services.admin import bootstrap_superuser
+
+    try:
+        bootstrap_superuser(db, username=username, email=email, password=password)
+    except ValueError:
+        row = db.scalar(select(AuthUser).where(AuthUser.username == username))
+        if row:
+            row.password_hash = hash_password(password)
+            row.is_superuser = True
+            db.commit()
 
 
 def get_user(db: Session, user_id: str) -> AuthUser | None:
