@@ -55,8 +55,8 @@ async def lifespan(_: FastAPI):
     try:
         seed_products(db)
         seed_registration_options(db)
-        seed_demo_users(db)
         ensure_bootstrap_admin_from_settings(db)
+        seed_demo_users(db)
     finally:
         db.close()
     await start_poker_world_consumer()

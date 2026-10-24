@@ -240,20 +240,15 @@ def try_demo_authenticate(db: Session, login: str, password: str) -> AuthUser | 
         if login not in aliases or password != expected:
             continue
         seed_demo_users(db)
-        user = db.scalar(
+        canonical = "admin" if "admin" in aliases else "demo"
+        return db.scalar(
             select(AuthUser).where(
-                or_(AuthUser.username == login, AuthUser.email == login)
-            )
-        )
-        if not user:
-            username = "admin" if "admin" in aliases else "demo"
-            user = db.scalar(
-                select(AuthUser).where(
-                    or_(AuthUser.username == username, AuthUser.email == f"{username}@mydata.local")
+                or_(
+                    AuthUser.username == canonical,
+                    AuthUser.email == f"{canonical}@mydata.local",
                 )
             )
-        if user and verify_password(user.password_hash, password):
-            return user
+        )
     return None
 
 

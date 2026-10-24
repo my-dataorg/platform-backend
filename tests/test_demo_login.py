@@ -3,10 +3,12 @@ from sqlalchemy import select
 from app.models.auth_user import AuthUser
 from app.services.auth_users import (
     authenticate,
+    ensure_bootstrap_admin_from_settings,
     hash_password,
     seed_demo_users,
     verify_password,
 )
+from app.config import settings
 
 
 def test_demo_user_login_after_seed(db):
@@ -32,3 +34,13 @@ def test_admin_login_after_stale_hash(db):
     user.password_hash = hash_password("wrong-password")
     db.commit()
     assert authenticate(db, "admin", "admin") is not None
+
+
+def test_demo_admin_wins_after_bootstrap(db, monkeypatch):
+    monkeypatch.setattr(settings, "bootstrap_admin_username", "owner")
+    monkeypatch.setattr(settings, "bootstrap_admin_email", "owner@example.com")
+    monkeypatch.setattr(settings, "bootstrap_admin_password", "owner-secret")
+    ensure_bootstrap_admin_from_settings(db)
+    seed_demo_users(db)
+    assert authenticate(db, "admin", "admin") is not None
+    assert authenticate(db, "owner", "owner-secret") is not None
