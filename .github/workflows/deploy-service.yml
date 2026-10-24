@@ -64,16 +64,27 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
 
-      - name: Upload disk cleanup script
+      - name: Free disk on server (no scp)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          scp -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes \
-            .github/scripts/docker-free-disk.sh \
-            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-free-disk.sh"
+            "$DEPLOY_USER@$DEPLOY_HOST" "bash -s" \
+            < .github/scripts/emergency-disk-cleanup.sh
+
+      - name: Install disk cleanup script on server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH' || (command -v sudo >/dev/null && sudo mkdir -p '$DEPLOY_PATH' && sudo chown \"\$(whoami):\$(whoami)\" '$DEPLOY_PATH')"
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cat > '$DEPLOY_PATH/docker-free-disk.sh'" \
+            < .github/scripts/docker-free-disk.sh
           ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" "chmod +x '$DEPLOY_PATH/docker-free-disk.sh'"
 
