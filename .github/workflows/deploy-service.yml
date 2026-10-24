@@ -27,8 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
-  cancel-in-progress: false
+  group: production-deploy-${{ inputs.service }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -49,8 +49,7 @@ jobs:
             *) echo "Unknown service: $SERVICE" >&2; exit 1 ;;
           esac
           if [[ ! "$IMAGE" =~ ^ghcr\.io/my-dataorg/${SERVICE}@sha256:[0-9a-f]{64}$ ]]; then
-            echo "Invalid image reference for $SERVICE: $IMAGE" >&2
-            echo "Expected: ghcr.io/my-dataorg/${SERVICE}@sha256:<64-char-hex>" >&2
+            echo "Invalid image: $IMAGE" >&2
             exit 1
           fi
 
@@ -64,31 +63,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
 
-      - name: Free disk on server (no scp)
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" "bash -s" \
-            < .github/scripts/emergency-disk-cleanup.sh
-
-      - name: Install disk cleanup script on server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "mkdir -p '$DEPLOY_PATH' || (command -v sudo >/dev/null && sudo mkdir -p '$DEPLOY_PATH' && sudo chown \"\$(whoami):\$(whoami)\" '$DEPLOY_PATH')"
-          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cat > '$DEPLOY_PATH/docker-free-disk.sh'" \
-            < .github/scripts/docker-free-disk.sh
-          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" "chmod +x '$DEPLOY_PATH/docker-free-disk.sh'"
-
-      - name: Pull and restart one service
+      - name: Prepare server and deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -97,152 +72,17 @@ jobs:
           SERVICE: ${{ inputs.service }}
           IMAGE: ${{ inputs.image }}
         run: |
-          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "MIN_FREE_MB=0 '$DEPLOY_PATH/docker-free-disk.sh'; MIN_FREE_MB=350 '$DEPLOY_PATH/docker-free-disk.sh'"
+          set -euo pipefail
+          SSH=(ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST")
 
-          printf '%s' "$GHCR_TOKEN" | ssh -i "$HOME/.ssh/deploy_key" \
-            -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          "${SSH[@]}" "bash -s" < .github/scripts/emergency-disk-cleanup.sh
 
-          ssh -i "$HOME/.ssh/deploy_key" \
-            -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' SERVICE='$SERVICE' IMAGE='$IMAGE' bash -s" <<'REMOTE'
-          set -eu
-          mkdir -p "$DEPLOY_PATH"
-          cd "$DEPLOY_PATH"
-          image_variable=$(printf '%s' "$SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE
-          [ -f service.env ] && cp service.env service.env.previous || true
-          printf '%s=%s\n' "$image_variable" "$IMAGE" > service.env
-          export "$image_variable=$IMAGE"
+          "${SSH[@]}" "mkdir -p '$DEPLOY_PATH' || (sudo mkdir -p '$DEPLOY_PATH' && sudo chown \"\$(whoami):\$(whoami)\" '$DEPLOY_PATH')"
 
-          compose() {
-            args=(-p production --env-file .env)
-            [ -f image.env ] && args+=(--env-file image.env)
-            [ -f service.env ] && args+=(--env-file service.env)
-            docker compose "${args[@]}" "$@"
-          }
+          "${SSH[@]}" "cat > '$DEPLOY_PATH/docker-free-disk.sh'" < .github/scripts/docker-free-disk.sh
+          "${SSH[@]}" "cat > '$DEPLOY_PATH/deploy-one-service.sh'" < .github/scripts/deploy-one-service.sh
+          "${SSH[@]}" "chmod +x '$DEPLOY_PATH/docker-free-disk.sh' '$DEPLOY_PATH/deploy-one-service.sh'"
 
-          remove_stale_service_container() {
-            local svc="$1"
-            compose stop "$svc" 2>/dev/null || true
-            compose rm -f "$svc" 2>/dev/null || true
-            local id name
-            for id in $(docker ps -aq --filter "name=${svc}" 2>/dev/null); do
-              docker rm -f "$id" 2>/dev/null || true
-            done
-            docker ps -a --format '{{.ID}} {{.Names}}' 2>/dev/null | while read -r id name; do
-              case "$name" in
-                *"production-${svc}"*)
-                  docker rm -f "$id" 2>/dev/null || true
-                  ;;
-              esac
-            done
-          }
+          printf '%s' "$GHCR_TOKEN" | "${SSH[@]}" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
 
-          rollback() {
-            if [ -f service.env.previous ]; then
-              cp service.env.previous service.env
-            else
-              rm -f service.env
-            fi
-            remove_stale_service_container "$SERVICE"
-            compose up -d --force-recreate --no-deps "$SERVICE" || true
-            exit 1
-          }
-          trap rollback ERR
-
-          if ! compose config --services | grep -qx "$SERVICE"; then
-            echo "Service $SERVICE is missing from $DEPLOY_PATH/compose.yml." >&2
-            echo "Run mydata Actions → Deploy production to upload the latest compose stack." >&2
-            exit 1
-          fi
-
-          ensure_postgres_db() {
-            local db_name="$1"
-            local pg
-            pg=$(compose ps -q postgres)
-            if [ -z "$pg" ]; then
-              echo "Postgres container is not running; start the stack before deploying $SERVICE." >&2
-              exit 1
-            fi
-            local exists
-            exists=$(docker exec "$pg" psql -U mydata -d postgres -tAc \
-              "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null || true)
-            if [ "$(echo "$exists" | tr -d '[:space:]')" = "1" ]; then
-              echo "Postgres database ${db_name} already exists."
-              return 0
-            fi
-            echo "Creating Postgres database ${db_name}..."
-            docker exec "$pg" psql -U mydata -d postgres -v ON_ERROR_STOP=1 \
-              -c "CREATE DATABASE ${db_name};"
-          }
-
-          if [ "$SERVICE" = "business-backend" ]; then
-            ensure_postgres_db business_db
-          fi
-
-          drop_stale_service_images() {
-            repo="ghcr.io/my-dataorg/${SERVICE}"
-            for id in $(docker images "${repo}" -q 2>/dev/null | sort -u); do
-              if [ -z "$(docker ps -aq --filter "ancestor=${id}" 2>/dev/null || true)" ]; then
-                docker rmi -f "$id" 2>/dev/null || true
-              fi
-            done
-          }
-          drop_stale_service_images
-          if [ -x ./docker-free-disk.sh ]; then
-            MIN_FREE_MB=0 ./docker-free-disk.sh
-            MIN_FREE_MB=350 ./docker-free-disk.sh
-          fi
-
-          docker pull "$IMAGE"
-          remove_stale_service_container "$SERVICE"
-          compose up -d --force-recreate --no-deps "$SERVICE"
-
-          container=""
-          for attempt in $(seq 1 10); do
-            container=$(compose ps -q "$SERVICE" 2>/dev/null | head -n1)
-            [ -n "$container" ] && docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -qx true && break
-            sleep 2
-          done
-          if [ -z "$container" ]; then
-            echo "No container id for $SERVICE after compose up." >&2
-            compose ps >&2 || true
-            rollback
-          fi
-          running=$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)
-          if [ "$running" != "true" ]; then
-            echo "Container for $SERVICE is not running. Logs:" >&2
-            docker logs "$container" 2>&1 | tail -n 100 >&2 || true
-            rollback
-          fi
-          case "$SERVICE" in
-            platform-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8002/health\", timeout=2)'" ;;
-            education-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8010/health\", timeout=2)'" ;;
-            social-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8020/health\", timeout=2)'" ;;
-            pokerworld-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8030/health\", timeout=2)'" ;;
-            business-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8040/health\", timeout=2)'" ;;
-            platform-frontend) check="node -e 'fetch(\"http://127.0.0.1:3000/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
-            education-frontend) check="node -e 'fetch(\"http://127.0.0.1:3010/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
-            pokerworld-frontend) check="node -e 'fetch(\"http://127.0.0.1:3110/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
-            business-frontend) check="node -e 'fetch(\"http://127.0.0.1:3120/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
-          esac
-          for attempt in $(seq 1 30); do
-            if docker exec "$container" sh -c "$check" >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" = 30 ]; then
-              echo "Health check failed for $SERVICE; recent container logs:" >&2
-              docker logs "$container" 2>&1 | tail -n 80 >&2 || true
-              rollback
-            fi
-            sleep 5
-          done
-          trap - ERR
-          rm -f service.env.previous
-          docker logout ghcr.io >/dev/null 2>&1 || true
-          docker image prune -af 2>/dev/null || true
-          REMOTE
+          "${SSH[@]}" "DEPLOY_PATH='$DEPLOY_PATH' SERVICE='$SERVICE' IMAGE='$IMAGE' '$DEPLOY_PATH/deploy-one-service.sh'"
