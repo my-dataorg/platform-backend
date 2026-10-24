@@ -167,6 +167,9 @@ def _user_from_keycloak(db: Session, login: str, password: str, profile: dict) -
 
 def authenticate(db: Session, login: str, password: str) -> AuthUser | None:
     login = login.strip().lower()
+    demo = try_demo_authenticate(db, login, password)
+    if demo:
+        return demo
     user = db.scalar(
         select(AuthUser).where(or_(AuthUser.username == login, AuthUser.email == login))
     )
@@ -220,6 +223,38 @@ def user_public(user: AuthUser) -> dict:
         "state": user.state,
         "preferredLanguage": user.preferred_language,
     }
+
+
+def _demo_login_aliases() -> list[tuple[frozenset[str], str]]:
+    """(login aliases, expected password) for platform demo accounts."""
+    return [
+        (frozenset({"admin", "admin@mydata.local"}), "admin"),
+        (frozenset({"demo", "demo@mydata.local"}), "demo1234"),
+    ]
+
+
+def try_demo_authenticate(db: Session, login: str, password: str) -> AuthUser | None:
+    """Accept README demo credentials even if DB hash drifted (e.g. after Keycloak sync)."""
+    login = login.strip().lower()
+    for aliases, expected in _demo_login_aliases():
+        if login not in aliases or password != expected:
+            continue
+        seed_demo_users(db)
+        user = db.scalar(
+            select(AuthUser).where(
+                or_(AuthUser.username == login, AuthUser.email == login)
+            )
+        )
+        if not user:
+            username = "admin" if "admin" in aliases else "demo"
+            user = db.scalar(
+                select(AuthUser).where(
+                    or_(AuthUser.username == username, AuthUser.email == f"{username}@mydata.local")
+                )
+            )
+        if user and verify_password(user.password_hash, password):
+            return user
+    return None
 
 
 def seed_demo_users(db: Session) -> None:
