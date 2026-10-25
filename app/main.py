@@ -21,6 +21,7 @@ from app.services.auth_users import (
     get_user,
     get_users_by_ids,
     search_users,
+    update_profile,
     seed_demo_users,
     tokens_for,
     user_public,
@@ -159,6 +160,23 @@ class SignupIn(BaseModel):
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, description="Username or email")
     password: str = Field(min_length=1)
+
+
+class ProfileUpdate(BaseModel):
+    firstName: str = Field(min_length=1, max_length=100)
+    lastName: str = Field(min_length=1, max_length=100)
+    email: str
+    gender: str
+    dateOfBirth: date
+    contactNumber: str = Field(min_length=5, max_length=40)
+    whatsappAvailable: bool = False
+    addressLine1: str | None = None
+    city: str | None = None
+    country: str | None = None
+    state: str | None = None
+    preferredLanguage: str = "en"
+    currentPassword: str | None = None
+    newPassword: str | None = None
 
 
 class ProductOut(BaseModel):
@@ -327,6 +345,43 @@ def users_me_profile(user: dict = Depends(get_current_user), db: Session = Depen
     row = get_user(db, user["id"])
     if not row:
         raise HTTPException(status_code=404, detail="Profile not found")
+    return user_public(row)
+
+
+@app.patch("/v1/users/me/profile")
+def update_me_profile(
+    body: ProfileUpdate,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        ensure_registration_options(db)
+        validate_registration_options(
+            db,
+            country_code=body.country,
+            state_code=body.state,
+            gender_code=body.gender,
+        )
+        row = update_profile(
+            db,
+            user["id"],
+            first_name=body.firstName,
+            last_name=body.lastName,
+            email=body.email,
+            gender=body.gender,
+            date_of_birth=body.dateOfBirth,
+            contact_number=body.contactNumber,
+            whatsapp_available=body.whatsappAvailable,
+            address_line1=body.addressLine1,
+            city=body.city,
+            country=body.country,
+            state=body.state,
+            preferred_language=body.preferredLanguage,
+            current_password=body.currentPassword,
+            new_password=body.newPassword,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     return user_public(row)
 
 

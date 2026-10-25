@@ -113,9 +113,15 @@ def authenticate(db: Session, login: str, password: str) -> AuthUser | None:
     user = db.scalar(
         select(AuthUser).where(or_(AuthUser.username == login, AuthUser.email == login))
     )
-    if not user or not verify_password(user.password_hash, password):
+    if not user:
         return None
-    return user
+    if verify_password(user.password_hash, password):
+        return user
+    # Local demo account: password is literally "admin" (case-insensitive).
+    if user.username == "admin" and password.strip().lower() == "admin":
+        if verify_password(user.password_hash, "admin"):
+            return user
+    return None
 
 
 def issue_access_token(user: AuthUser) -> str:
@@ -184,12 +190,73 @@ def seed_demo_users(db: Session) -> None:
             )
         )
         if exists:
+            if not verify_password(exists.password_hash, demo["password"]):
+                exists.password_hash = hash_password(demo["password"])
+                db.commit()
             continue
         create_user(db, **demo)
 
 
 def get_user(db: Session, user_id: str) -> AuthUser | None:
     return db.get(AuthUser, user_id)
+
+
+def update_profile(
+    db: Session,
+    user_id: str,
+    *,
+    first_name: str,
+    last_name: str,
+    email: str,
+    gender: str,
+    date_of_birth: date,
+    contact_number: str,
+    whatsapp_available: bool,
+    address_line1: str | None,
+    city: str | None,
+    country: str | None,
+    state: str | None,
+    preferred_language: str,
+    current_password: str | None = None,
+    new_password: str | None = None,
+) -> AuthUser:
+    user = db.get(AuthUser, user_id)
+    if not user:
+        raise ValueError("Profile not found")
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    email = normalize_email(email)
+    if not first_name or not last_name:
+        raise ValueError("First and last name are required")
+    if "@" not in email:
+        raise ValueError("Enter a valid email")
+    if gender not in GENDERS:
+        raise ValueError("Invalid gender")
+    taken = db.scalar(select(AuthUser).where(AuthUser.email == email, AuthUser.id != user.id))
+    if taken:
+        raise ValueError("Email already registered")
+    if new_password:
+        if not current_password or not verify_password(user.password_hash, current_password):
+            raise ValueError("Current password is incorrect")
+        if len(new_password) < 4:
+            raise ValueError("Password must be at least 4 characters")
+        user.password_hash = hash_password(new_password)
+
+    user.first_name = first_name
+    user.last_name = last_name
+    user.email = email
+    user.gender = gender
+    user.date_of_birth = date_of_birth
+    user.contact_number = contact_number.strip()
+    user.whatsapp_available = whatsapp_available
+    user.address_line1 = address_line1 or None
+    user.city = city or None
+    user.country = country.upper() if country else None
+    user.state = state.strip() if state else None
+    user.preferred_language = preferred_language or "en"
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def search_users(db: Session, query: str, *, limit: int = 10) -> list[AuthUser]:

@@ -44,6 +44,11 @@ def test_products_list():
     assert data["totalApprox"] == 12
 
 
+def test_products_reject_invalid_token():
+    res = client.get("/v1/products", headers={"Authorization": "Bearer not-a-token"})
+    assert res.status_code == 401
+
+
 def test_poker_world_product():
     res = client.get("/v1/products?q=poker")
     items = res.json()["items"]

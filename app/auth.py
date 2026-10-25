@@ -80,8 +80,8 @@ async def get_optional_user(
     try:
         payload = await _decode_token(creds.credentials)
         return {"id": payload.get("sub")}
-    except (JWTError, StopIteration, httpx.HTTPError, ValueError):
-        return None
+    except (JWTError, StopIteration, httpx.HTTPError, ValueError) as error:
+        raise HTTPException(status_code=401, detail="Invalid token") from error
 
 
 def require_superuser(
