@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-import httpx
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from jose import jwt
@@ -109,76 +108,20 @@ def create_user(
     return user
 
 
-def _keycloak_profile(login: str, password: str) -> dict | None:
-    """Users who registered in Keycloak can still sign in to platform."""
-    realm = f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
-    try:
-        token = httpx.post(
-            f"{realm}/protocol/openid-connect/token",
-            data={
-                "grant_type": "password",
-                "client_id": "platform-frontend",
-                "username": login,
-                "password": password,
-            },
-            timeout=5.0,
-        )
-        if token.status_code != 200:
-            return None
-        access = token.json().get("access_token")
-        if not access:
-            return None
-        info = httpx.get(
-            f"{realm}/protocol/openid-connect/userinfo",
-            headers={"Authorization": f"Bearer {access}"},
-            timeout=5.0,
-        )
-        if info.status_code != 200:
-            return None
-        return info.json()
-    except httpx.HTTPError:
-        return None
-
-
-def _user_from_keycloak(db: Session, login: str, password: str, profile: dict) -> AuthUser:
-    username = normalize_username(str(profile.get("preferred_username") or login))
-    email = normalize_email(str(profile.get("email") or f"{username}@users.local"))
-    existing = db.scalar(
-        select(AuthUser).where(or_(AuthUser.username == username, AuthUser.email == email))
-    )
-    if existing:
-        existing.password_hash = hash_password(password)
-        db.commit()
-        db.refresh(existing)
-        return existing
-    return create_user(
-        db,
-        username=username,
-        email=email,
-        password=password,
-        first_name=str(profile.get("given_name") or username),
-        last_name=str(profile.get("family_name") or "User"),
-        gender="prefer_not_to_say",
-        date_of_birth=date(1990, 1, 1),
-        contact_number="+10000000000",
-        whatsapp_available=False,
-    )
-
-
 def authenticate(db: Session, login: str, password: str) -> AuthUser | None:
     login = login.strip().lower()
-    demo = try_demo_authenticate(db, login, password)
-    if demo:
-        return demo
     user = db.scalar(
         select(AuthUser).where(or_(AuthUser.username == login, AuthUser.email == login))
     )
-    if user and verify_password(user.password_hash, password):
-        return user
-    profile = _keycloak_profile(login, password)
-    if not profile:
+    if not user:
         return None
-    return _user_from_keycloak(db, login, password, profile)
+    if verify_password(user.password_hash, password):
+        return user
+    # Local demo account: password is literally "admin" (case-insensitive).
+    if user.username == "admin" and password.strip().lower() == "admin":
+        if verify_password(user.password_hash, "admin"):
+            return user
+    return None
 
 
 def issue_access_token(user: AuthUser) -> str:
@@ -225,35 +168,8 @@ def user_public(user: AuthUser) -> dict:
     }
 
 
-def _demo_login_aliases() -> list[tuple[frozenset[str], str]]:
-    """(login aliases, expected password) for platform demo accounts."""
-    return [
-        (frozenset({"admin", "admin@mydata.local"}), "admin"),
-        (frozenset({"demo", "demo@mydata.local"}), "demo1234"),
-    ]
-
-
-def try_demo_authenticate(db: Session, login: str, password: str) -> AuthUser | None:
-    """Accept README demo credentials even if DB hash drifted (e.g. after Keycloak sync)."""
-    login = login.strip().lower()
-    for aliases, expected in _demo_login_aliases():
-        if login not in aliases or password != expected:
-            continue
-        seed_demo_users(db)
-        canonical = "admin" if "admin" in aliases else "demo"
-        return db.scalar(
-            select(AuthUser).where(
-                or_(
-                    AuthUser.username == canonical,
-                    AuthUser.email == f"{canonical}@mydata.local",
-                )
-            )
-        )
-    return None
-
-
 def seed_demo_users(db: Session) -> None:
-    """Ensure demo accounts exist and passwords match README (local/staging recovery)."""
+    """Ensure local demo accounts exist (admin / admin)."""
     demos = [
         {
             "username": "admin",
@@ -266,65 +182,81 @@ def seed_demo_users(db: Session) -> None:
             "contact_number": "+10000000000",
             "whatsapp_available": False,
         },
-        {
-            "username": "demo",
-            "email": "demo@mydata.local",
-            "password": "demo1234",
-            "first_name": "Demo",
-            "last_name": "User",
-            "gender": "prefer_not_to_say",
-            "date_of_birth": date(1990, 1, 1),
-            "contact_number": "+10000000000",
-            "whatsapp_available": False,
-        },
     ]
     for demo in demos:
-        password = demo["password"]
-        existing = db.scalar(
+        exists = db.scalar(
             select(AuthUser).where(
                 or_(AuthUser.username == demo["username"], AuthUser.email == demo["email"])
             )
         )
-        if existing:
-            existing.password_hash = hash_password(password)
-            db.commit()
+        if exists:
+            if not verify_password(exists.password_hash, demo["password"]):
+                exists.password_hash = hash_password(demo["password"])
+                db.commit()
             continue
         create_user(db, **demo)
 
 
-def ensure_bootstrap_admin_from_settings(db: Session) -> None:
-    """Create or refresh password for BOOTSTRAP_ADMIN_* env user (production first login)."""
-    username = (settings.bootstrap_admin_username or "").strip()
-    email = (settings.bootstrap_admin_email or "").strip()
-    password = settings.bootstrap_admin_password or ""
-    if not username or not email or not password:
-        return
-
-    username = normalize_username(username)
-    email = normalize_email(email)
-    row = db.scalar(
-        select(AuthUser).where(or_(AuthUser.username == username, AuthUser.email == email))
-    )
-    if row:
-        row.password_hash = hash_password(password)
-        row.is_superuser = True
-        db.commit()
-        return
-
-    from app.services.admin import bootstrap_superuser
-
-    try:
-        bootstrap_superuser(db, username=username, email=email, password=password)
-    except ValueError:
-        row = db.scalar(select(AuthUser).where(AuthUser.username == username))
-        if row:
-            row.password_hash = hash_password(password)
-            row.is_superuser = True
-            db.commit()
-
-
 def get_user(db: Session, user_id: str) -> AuthUser | None:
     return db.get(AuthUser, user_id)
+
+
+def update_profile(
+    db: Session,
+    user_id: str,
+    *,
+    first_name: str,
+    last_name: str,
+    email: str,
+    gender: str,
+    date_of_birth: date,
+    contact_number: str,
+    whatsapp_available: bool,
+    address_line1: str | None,
+    city: str | None,
+    country: str | None,
+    state: str | None,
+    preferred_language: str,
+    current_password: str | None = None,
+    new_password: str | None = None,
+) -> AuthUser:
+    user = db.get(AuthUser, user_id)
+    if not user:
+        raise ValueError("Profile not found")
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    email = normalize_email(email)
+    if not first_name or not last_name:
+        raise ValueError("First and last name are required")
+    if "@" not in email:
+        raise ValueError("Enter a valid email")
+    if gender not in GENDERS:
+        raise ValueError("Invalid gender")
+    taken = db.scalar(select(AuthUser).where(AuthUser.email == email, AuthUser.id != user.id))
+    if taken:
+        raise ValueError("Email already registered")
+    if new_password:
+        if not current_password or not verify_password(user.password_hash, current_password):
+            raise ValueError("Current password is incorrect")
+        if len(new_password) < 4:
+            raise ValueError("Password must be at least 4 characters")
+        user.password_hash = hash_password(new_password)
+
+    user.first_name = first_name
+    user.last_name = last_name
+    user.email = email
+    user.gender = gender
+    user.date_of_birth = date_of_birth
+    user.contact_number = contact_number.strip()
+    user.whatsapp_available = whatsapp_available
+    user.address_line1 = address_line1 or None
+    user.city = city or None
+    user.country = country.upper() if country else None
+    user.state = state.strip() if state else None
+    user.preferred_language = preferred_language or "en"
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def search_users(db: Session, query: str, *, limit: int = 10) -> list[AuthUser]:
