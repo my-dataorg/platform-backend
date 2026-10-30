@@ -52,9 +52,10 @@ class Settings(BaseSettings):
             self.bootstrap_admin_password,
         )
         if any(values) and not all(values):
-            raise ValueError(
-                "Bootstrap admin username, email, and password must be provided together"
-            )
+            # Partial bootstrap env prevents API startup in Docker; ignore incomplete values.
+            self.bootstrap_admin_username = ""
+            self.bootstrap_admin_email = ""
+            self.bootstrap_admin_password = ""
 
     class Config:
         env_file = ".env"

@@ -70,6 +70,32 @@ case "$SERVICE" in
   business-backend) ensure_postgres_db business_db ;;
 esac
 
+wait_for_platform_backend() {
+  echo "Ensuring platform-backend is running..."
+  compose up -d postgres nats platform-backend
+  local bc=""
+  for attempt in $(seq 1 36); do
+    bc=$(compose ps -q platform-backend 2>/dev/null | head -n1)
+    if [ -n "$bc" ]; then
+      if docker exec "$bc" python -c 'from urllib.request import urlopen; urlopen("http://127.0.0.1:8002/health", timeout=3)' 2>/dev/null; then
+        echo "platform-backend is healthy"
+        return 0
+      fi
+      if [ "$(docker inspect -f '{{.State.Status}}' "$bc" 2>/dev/null)" = "exited" ]; then
+        echo "platform-backend exited; recent logs:" >&2
+        docker logs "$bc" 2>&1 | tail -n 50 >&2 || true
+      fi
+    fi
+    sleep 5
+  done
+  echo "platform-backend did not become healthy" >&2
+  exit 1
+}
+
+if [ "$SERVICE" = "platform-frontend" ]; then
+  wait_for_platform_backend
+fi
+
 if [ -x ./docker-free-disk.sh ]; then
   MIN_FREE_MB=0 ./docker-free-disk.sh
   MIN_FREE_MB=300 ./docker-free-disk.sh
@@ -100,7 +126,10 @@ case "$SERVICE" in
   social-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8020/health\", timeout=2)'" ;;
   pokerworld-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8030/health\", timeout=2)'" ;;
   business-backend) check="python -c 'from urllib.request import urlopen; urlopen(\"http://127.0.0.1:8040/health\", timeout=2)'" ;;
-  platform-frontend) check="node -e 'fetch(\"http://127.0.0.1:3000/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
+  platform-frontend)
+    check="node -e 'fetch(\"http://127.0.0.1:3000/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'"
+    backend_check="node -e 'fetch(\"http://platform-backend:8002/health\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'"
+    ;;
   education-frontend) check="node -e 'fetch(\"http://127.0.0.1:3010/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
   pokerworld-frontend) check="node -e 'fetch(\"http://127.0.0.1:3110/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
   business-frontend) check="node -e 'fetch(\"http://127.0.0.1:3120/api/auth/session\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'" ;;
@@ -111,6 +140,19 @@ if [ -n "$check" ]; then
   for attempt in $(seq 1 30); do
     docker exec "$container" sh -c "$check" >/dev/null 2>&1 && break
     [ "$attempt" = 30 ] && { docker logs "$container" 2>&1 | tail -n 80 >&2 || true; rollback; }
+    sleep 5
+  done
+fi
+
+if [ -n "${backend_check:-}" ]; then
+  for attempt in $(seq 1 12); do
+    docker exec "$container" sh -c "$backend_check" >/dev/null 2>&1 && break
+    [ "$attempt" = 12 ] && {
+      echo "platform-frontend cannot reach platform-backend on Docker network" >&2
+      bc=$(compose ps -q platform-backend 2>/dev/null | head -n1)
+      [ -n "$bc" ] && docker logs "$bc" 2>&1 | tail -n 50 >&2 || true
+      rollback
+    }
     sleep 5
   done
 fi
