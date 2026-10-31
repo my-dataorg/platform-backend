@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: production-deploy-${{ inputs.service }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:

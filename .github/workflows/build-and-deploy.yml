@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   build:
+    concurrency:
+      group: build-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.image.outputs.image }}
