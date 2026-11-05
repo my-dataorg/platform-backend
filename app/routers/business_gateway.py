@@ -52,3 +52,8 @@ async def delete_business(
     request: Request, business_id: str, _: dict = Depends(get_current_user)
 ):
     return await _forward(request, f"/v1/businesses/{business_id}")
+
+
+@router.get("/users/me/join-request-inbox")
+async def business_join_request_inbox(request: Request, _: dict = Depends(get_current_user)):
+    return await _forward(request, "/v1/users/me/join-request-inbox")
