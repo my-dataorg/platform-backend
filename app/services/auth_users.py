@@ -197,6 +197,23 @@ def seed_demo_users(db: Session) -> None:
         create_user(db, **demo)
 
 
+def ensure_bootstrap_admin_from_settings(db: Session) -> AuthUser | None:
+    """Create the configured platform superuser once, if env vars are set."""
+    username = settings.bootstrap_admin_username.strip()
+    email = settings.bootstrap_admin_email.strip()
+    password = settings.bootstrap_admin_password
+    if not username or not email or not password:
+        return None
+    from app.services.admin import bootstrap_superuser
+
+    return bootstrap_superuser(
+        db,
+        username=username,
+        email=email,
+        password=password,
+    )
+
+
 def get_user(db: Session, user_id: str) -> AuthUser | None:
     return db.get(AuthUser, user_id)
 
