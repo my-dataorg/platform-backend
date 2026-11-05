@@ -9,11 +9,11 @@ from app.models.reference_data import Country, GenderOption, StateProvince
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 COUNTRIES = tuple(
     (item["code"], item["name"])
-    for item in json.loads((DATA_DIR / "countries.json").read_text())
+    for item in json.loads((DATA_DIR / "countries.json").read_text(encoding="utf-8"))
 )
 STATES = tuple(
     (item["code"], item["country_code"], item["name"])
-    for item in json.loads((DATA_DIR / "states.json").read_text())
+    for item in json.loads((DATA_DIR / "states.json").read_text(encoding="utf-8"))
 )
 
 GENDERS = (

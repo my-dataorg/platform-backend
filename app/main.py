@@ -18,6 +18,7 @@ from app.models import Base, Product
 from app.services.auth_users import (
     authenticate,
     create_user,
+    ensure_bootstrap_admin_from_settings,
     get_user,
     get_users_by_ids,
     search_users,
@@ -43,6 +44,7 @@ from app.services.registration_options import (
     validate_registration_options,
 )
 from app.routers.admin_products import router as admin_products_router
+from app.routers.business_gateway import router as business_gateway_router
 
 
 @asynccontextmanager
@@ -54,6 +56,7 @@ async def lifespan(_: FastAPI):
     try:
         seed_products(db)
         seed_registration_options(db)
+        ensure_bootstrap_admin_from_settings(db)
         seed_demo_users(db)
     finally:
         db.close()
@@ -65,6 +68,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 app.include_router(admin_products_router)
+app.include_router(business_gateway_router)
 
 
 @app.exception_handler(HTTPException)

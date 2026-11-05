@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     education_launch_url: str = "http://localhost:3010"
     poker_world_launch_url: str = "http://localhost:3110"
     business_launch_url: str = "http://localhost:3120"
+    business_api_url: str = "http://127.0.0.1:8040"
     product_allowed_origins: str = (
         "http://localhost:3010,http://localhost:3020,"
         "http://localhost:3030,http://localhost:3040,http://localhost:3050,"
@@ -51,9 +52,10 @@ class Settings(BaseSettings):
             self.bootstrap_admin_password,
         )
         if any(values) and not all(values):
-            raise ValueError(
-                "Bootstrap admin username, email, and password must be provided together"
-            )
+            # Partial bootstrap env prevents API startup in Docker; ignore incomplete values.
+            self.bootstrap_admin_username = ""
+            self.bootstrap_admin_email = ""
+            self.bootstrap_admin_password = ""
 
     class Config:
         env_file = ".env"
