@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,6 +12,7 @@ from app.services.jwt_keys import public_pem
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 _jwks_cache: dict | None = None
 
@@ -64,6 +67,8 @@ async def get_current_user(
     try:
         payload = await _decode_token(creds.credentials)
     except (JWTError, StopIteration, httpx.HTTPError, ValueError) as e:
+        if isinstance(e, httpx.HTTPError):
+            logger.warning("external api failed operation=jwks error=%s", type(e).__name__)
         raise HTTPException(status_code=401, detail="Invalid token") from e
     return {
         "id": payload.get("sub"),
@@ -81,6 +86,8 @@ async def get_optional_user(
         payload = await _decode_token(creds.credentials)
         return {"id": payload.get("sub")}
     except (JWTError, StopIteration, httpx.HTTPError, ValueError) as error:
+        if isinstance(error, httpx.HTTPError):
+            logger.warning("external api failed operation=jwks error=%s", type(error).__name__)
         raise HTTPException(status_code=401, detail="Invalid token") from error
 
 

@@ -17,6 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Shared rate-limit store for API containers: RATE_LIMIT_REDIS_URL=redis://redis:6379/0
     ports:
       - "6379:6379"
 

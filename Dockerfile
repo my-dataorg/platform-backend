@@ -3,7 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     RUNNING_IN_DOCKER=1 \
-    BUSINESS_API_URL=http://business-backend:8040
+    BUSINESS_API_URL=http://business-backend:8040 \
+    LOG_DIR=/var/log/mydata \
+    LOG_TO_FILE=true \
+    RATE_LIMIT_ENABLED=true
 
 WORKDIR /app
 
@@ -13,13 +16,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY app ./app
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
-    && chown -R appuser:appuser /app
+    && mkdir -p /var/log/mydata \
+    && chown -R appuser:appuser /app /var/log/mydata
 
 USER appuser
+
+VOLUME ["/var/log/mydata"]
 
 EXPOSE 8002
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8002/health', timeout=3)"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--no-access-log"]

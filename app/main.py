@@ -15,6 +15,7 @@ from app.config import settings
 from app.db.session import SessionLocal, engine, get_db
 from app.internal_auth import require_internal_token
 from app.models import Base, Product
+from app.observability import install_observability
 from app.services.auth_users import (
     authenticate,
     create_user,
@@ -101,12 +102,14 @@ async def validation_problem(_: Request, error: RequestValidationError):
     )
 
 
+install_observability(app, service_name=settings.app_name, engine=engine)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
 
 
